@@ -85,6 +85,30 @@ __ctxp_color_code() {
     esac
 }
 
+# Ordered list of available color names — single source of truth for
+# `ctxp color list`. Keep in sync with the cases in __ctxp_color_code.
+__CTXP_COLOR_NAMES=(
+    red green yellow blue magenta cyan white gray orange
+    brightred brightgreen brightyellow brightblue
+    brightmagenta brightcyan brightwhite none
+)
+
+# Prints every available color name, each rendered in its own color
+# (plain names when NO_COLOR is set).
+__ctxp_list_colors() {
+    echo "Available colors:"
+    local c code reset=$'\033[0m'
+    [[ -n "${NO_COLOR:-}" ]] && reset=""
+    for c in "${__CTXP_COLOR_NAMES[@]}"; do
+        if [[ -n "${NO_COLOR:-}" ]]; then
+            printf "  %s\n" "$c"
+        else
+            code="$(__ctxp_color_code "$c")"
+            printf "  %s%s%s\n" "$code" "$c" "$reset"
+        fi
+    done
+}
+
 __ctxp_enable() {
     local name="${1:-}"
     if [[ -z "$name" ]]; then
@@ -172,7 +196,14 @@ __ctxp_set_color() {
     if [[ -z "$name" ]]; then
         echo "Usage: ctxp color <provider> [color]" >&2
         echo "       Colors: red green yellow blue magenta cyan white none" >&2
+        echo "       Run 'ctxp color list' to see all available colors." >&2
         return 1
+    fi
+
+    # `ctxp color list` — show every available color instead of a provider
+    if [[ "$name" == "list" ]]; then
+        __ctxp_list_colors
+        return 0
     fi
 
     local upper
@@ -258,6 +289,7 @@ ctxp — context-prompt CLI
   ctxp disable <provider>           hide a provider from the prompt
   ctxp order   <provider> ...       set the left-to-right display order
   ctxp color   <provider> [color]   show or set a provider's color
+  ctxp color   list                 list all available colors
   ctxp list                         show all providers, status, and color
   ctxp status                       print what the right prompt currently shows
   ctxp add     <name> '<cmd>'       register a custom one-liner provider
@@ -273,6 +305,7 @@ Examples:
   ctxp order   k8s aws git venv
   ctxp color   aws red
   ctxp color   k8s
+  ctxp color   list
   ctxp add myapp '[ -n "$MYAPP_ENV" ] && printf "<myapp:%s>" "$MYAPP_ENV"'
 EOF
 }
