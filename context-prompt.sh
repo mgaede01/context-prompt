@@ -40,7 +40,8 @@ CTXP_KNOWN_PROVIDERS=()
 # Called by provider files to self-register into both arrays.
 # Optional second arg: command string to eval as the function body (one-liner shorthand).
 ctxp_register() {
-    local name="$1"
+    local name="${1:-}"
+    [[ -z "$name" ]] && return
     if [[ -n "${2:-}" ]]; then
         eval "ctxp_provider_${name}() { ${2}; }"
     fi
@@ -213,6 +214,7 @@ __ctxp_list() {
 
     local p upper name_var color_name
     for p in "${CTXP_PROVIDERS[@]+"${CTXP_PROVIDERS[@]}"}"; do
+        [[ -z "$p" ]] && continue
         upper=$(printf '%s' "$p" | tr '[:lower:]' '[:upper:]')
         name_var="CTXP_${upper}_COLOR_NAME"
         if [[ -n "${BASH_VERSION:-}" ]]; then
@@ -224,6 +226,7 @@ __ctxp_list() {
     done
 
     for p in "${CTXP_KNOWN_PROVIDERS[@]+"${CTXP_KNOWN_PROVIDERS[@]}"}"; do
+        [[ -z "$p" ]] && continue
         __ctxp_in_array "$p" "${CTXP_PROVIDERS[@]+"${CTXP_PROVIDERS[@]}"}" && continue
         upper=$(printf '%s' "$p" | tr '[:lower:]' '[:upper:]')
         name_var="CTXP_${upper}_COLOR_NAME"
@@ -270,7 +273,7 @@ Examples:
   ctxp order   k8s aws git venv
   ctxp color   aws red
   ctxp color   k8s
-  ctxp add myapp '[ -n "$MYAPP_ENV" ] && printf "<myapp: %s>" "$MYAPP_ENV"'
+  ctxp add myapp '[ -n "$MYAPP_ENV" ] && printf "<myapp:%s>" "$MYAPP_ENV"'
 EOF
 }
 
@@ -302,7 +305,8 @@ __ctxp_build_prompt() {
 }
 
 __ctxp_visible_len() {
-    printf "%s" "$1" | sed 's/\x1b\[[0-9;]*m//g' | wc -m | tr -d ' '
+    local esc=$'\033'
+    printf "%s" "$1" | sed "s/${esc}\[[0-9;]*m//g" | wc -m | tr -d ' '
 }
 
 # Bash: render right prompt via cursor positioning.

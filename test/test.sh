@@ -55,10 +55,10 @@ unset AWS_PROFILE
 check "no output when AWS_PROFILE unset" "" "$(ctxp_provider_aws)"
 
 AWS_PROFILE="company-west"
-check "shows profile name" "<aws: company-west>" "$(ctxp_provider_aws)"
+check "shows profile name" "<aws:company-west>" "$(ctxp_provider_aws)"
 
 AWS_PROFILE="prod"
-check "shows different profile" "<aws: prod>" "$(ctxp_provider_aws)"
+check "shows different profile" "<aws:prod>" "$(ctxp_provider_aws)"
 
 echo ""
 echo "--- K8s provider ---"
@@ -72,7 +72,7 @@ contexts:
   name: prod-cluster
 EOF
 
-check "shows current context" "<k8s: prod-cluster>" "$(ctxp_provider_k8s)"
+check "shows current context" "<k8s:prod-cluster>" "$(ctxp_provider_k8s)"
 
 KUBECONFIG="/tmp/ctxp_nonexistent_$$.yaml"
 check "no output when kubeconfig missing" "" "$(ctxp_provider_k8s)"
@@ -87,7 +87,7 @@ git -C "$TMP_REPO" init -q
 git -C "$TMP_REPO" commit --allow-empty -m "init" -q
 
 actual=$(cd "$TMP_REPO" && NO_COLOR=1 source "${SCRIPT_DIR}/context-prompt.sh" 2>/dev/null && ctxp_provider_git)
-check_contains "shows branch name" "<git: " "$actual"
+check_contains "shows branch name" "<git:" "$actual"
 
 rm -rf "$TMP_REPO"
 
@@ -97,12 +97,12 @@ unset VIRTUAL_ENV
 check "no output when no venv" "" "$(ctxp_provider_venv)"
 
 VIRTUAL_ENV="/home/user/.venv/myproject"
-check "shows venv basename" "<venv: myproject>" "$(ctxp_provider_venv)"
+check "shows venv basename" "<venv:myproject>" "$(ctxp_provider_venv)"
 
 echo ""
 echo "--- ctxp disable ---"
 unset AWS_PROFILE; AWS_PROFILE="test-profile"
-check_contains "aws enabled before disable" "<aws: test-profile>" "$(NO_COLOR=1 __ctxp_build_prompt)"
+check_contains "aws enabled before disable" "<aws:test-profile>" "$(NO_COLOR=1 __ctxp_build_prompt)"
 
 ctxp disable aws > /dev/null
 check_not_contains "aws gone after disable" "<aws:" "$(NO_COLOR=1 __ctxp_build_prompt)"
@@ -111,7 +111,7 @@ check_contains "aws shows disabled in list" "disabled" "$(ctxp list | grep aws)"
 echo ""
 echo "--- ctxp enable ---"
 ctxp enable aws > /dev/null
-check_contains "aws back after enable" "<aws: test-profile>" "$(NO_COLOR=1 __ctxp_build_prompt)"
+check_contains "aws back after enable" "<aws:test-profile>" "$(NO_COLOR=1 __ctxp_build_prompt)"
 check_contains "aws shows enabled in list" "enabled" "$(ctxp list | grep aws)"
 
 echo ""
@@ -124,9 +124,9 @@ check_contains "list shows venv" "venv" "$list_output"
 
 echo ""
 echo "--- ctxp add ---"
-ctxp add testctx '[ -n "${_TESTCTX:-}" ] && printf "<testctx: %s>" "$_TESTCTX"' > /dev/null
+ctxp add testctx '[ -n "${_TESTCTX:-}" ] && printf "<testctx:%s>" "$_TESTCTX"' > /dev/null
 _TESTCTX="hello"
-check "custom add provider renders" "<testctx: hello>" "$(ctxp_provider_testctx)"
+check "custom add provider renders" "<testctx:hello>" "$(ctxp_provider_testctx)"
 check_contains "add shows in list" "testctx" "$(ctxp list)"
 unset _TESTCTX
 
@@ -134,7 +134,7 @@ echo ""
 echo "--- ctxp status ---"
 unset AWS_PROFILE; AWS_PROFILE="status-test"
 status_out="$(ctxp status)"
-check_contains "status shows aws segment" "<aws: status-test>" "$status_out"
+check_contains "status shows aws segment" "<aws:status-test>" "$status_out"
 
 echo ""
 echo "--- ctxp color ---"
