@@ -193,6 +193,19 @@ check_contains "list shows COLOR header" "COLOR" "$list_out"
 check_contains "list shows yellow for aws" "yellow" "$list_out"
 
 echo ""
+echo "--- zsh RPROMPT escape wrapping ---"
+# __ctxp_precmd wraps ANSI escapes in %{...%} so zsh counts them as
+# zero-width. Hardcode the escapes in the provider (the suite runs with
+# NO_COLOR=1, which blanks the shared color constants).
+esc=$'\033'
+ctxp add wraptest "printf '${esc}[31m<wraptest:%s>${esc}[0m' z" > /dev/null
+__ctxp_precmd
+check_contains "RPROMPT wraps opening escape in %{...%}" "%{${esc}[31m%}" "$RPROMPT"
+check_contains "RPROMPT wraps reset escape in %{...%}"   "%{${esc}[0m%}"  "$RPROMPT"
+check_contains "RPROMPT keeps visible text unwrapped"    "<wraptest:z>"   "$RPROMPT"
+ctxp disable wraptest > /dev/null
+
+echo ""
 echo "================================"
 echo "Results: ${PASS} passed, ${FAIL} failed"
 [[ $FAIL -eq 0 ]]

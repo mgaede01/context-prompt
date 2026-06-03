@@ -343,7 +343,12 @@ __ctxp_bash_prompt() {
 
 # Zsh: set RPROMPT before each prompt.
 __ctxp_precmd() {
-    RPROMPT="$(__ctxp_build_prompt)"
+    local esc=$'\033'
+    # Wrap each ANSI escape in %{...%} so zsh counts it as zero-width.
+    # Unwrapped escapes are counted toward the prompt's display width, so
+    # RPROMPT gets right-aligned too far left and overlaps the left prompt —
+    # worsening with each additional colored provider segment.
+    RPROMPT="$(__ctxp_build_prompt | sed "s/${esc}\[[0-9;]*m/%{&%}/g")"
 }
 
 # --- Shell hooks ---
