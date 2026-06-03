@@ -6,7 +6,7 @@ ctxp_provider_venv() {
 
     local color="${CTXP_VENV_COLOR:-${__CTXP_MAGENTA:-}}"
     local reset="${__CTXP_RESET:-}"
-    printf "%s<venv: %s>%s" "$color" "$(basename "$VIRTUAL_ENV")" "$reset"
+    printf "%s<venv:%s>%s" "$color" "$(basename "$VIRTUAL_ENV")" "$reset"
 }
 
 ctxp_register venv

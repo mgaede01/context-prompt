@@ -3,8 +3,7 @@
 Displays your current environment contexts on the right side of your terminal prompt.
 
 ```
-user@host ~/projects/myapp          <git: main><aws: prod><k8s: prod-cluster>
-$
+user@host ~/projects/myapp $                 <git:main><aws:prod><k8s:prod-cluster>
 ```
 
 Works in **bash** and **zsh**. Pure shell — no binaries, no dependencies.
@@ -15,17 +14,17 @@ Works in **bash** and **zsh**. Pure shell — no binaries, no dependencies.
 
 | Segment | Source |
 |---|---|
-| `<aws: profile>` | `$AWS_PROFILE` environment variable |
-| `<k8s: context>` | `~/.kube/config` current context (no `kubectl` call) |
-| `<git: branch>` | Current git branch or short SHA when detached |
-| `<venv: name>` | Active Python virtualenv from `$VIRTUAL_ENV` |
+| `<aws:profile>` | `$AWS_PROFILE` environment variable |
+| `<k8s:context>` | `~/.kube/config` current context (no `kubectl` call) |
+| `<git:branch>` | Current git branch or short SHA when detached |
+| `<venv:name>` | Active Python virtualenv from `$VIRTUAL_ENV` |
 
 ---
 
 ## Installation
 
 ```bash
-git clone <this-repo> context-prompt
+git clone https://github.com/mgaede01/context-prompt.git context-prompt
 bash context-prompt/install.sh
 ```
 
@@ -102,7 +101,7 @@ Any enabled provider you omit is automatically appended at the end. Disabled pro
 **Check the current output:**
 ```bash
 ctxp status
-# <k8s: prod-cluster><aws: company-west><git: main>
+# <k8s:prod-cluster><aws:company-west><git:main>
 ```
 
 ---
@@ -151,7 +150,7 @@ Set `NO_COLOR=1` to disable all colors globally (follows the [no-color.org](http
 ctxp add terraform '
   ws=$(terraform workspace show 2>/dev/null) || return
   [[ "$ws" == "default" ]] && return
-  printf "<tf: %s>" "$ws"
+  printf "<tf:%s>" "$ws"
 '
 ```
 
@@ -159,7 +158,7 @@ ctxp add terraform '
 ```bash
 ctxp_provider_myapp() {
     [ -z "$MYAPP_ENV" ] && return
-    printf "\033[36m<myapp: %s>\033[0m" "$MYAPP_ENV"
+    printf "\033[36m<myapp:%s>\033[0m" "$MYAPP_ENV"
 }
 ctxp_register myapp
 ```

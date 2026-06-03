@@ -11,7 +11,7 @@ ctxp_provider_git() {
 
     local color="${CTXP_GIT_COLOR:-${__CTXP_GREEN:-}}"
     local reset="${__CTXP_RESET:-}"
-    printf "%s<git: %s>%s" "$color" "$branch" "$reset"
+    printf "%s<git:%s>%s" "$color" "$branch" "$reset"
 }
 
 ctxp_register git
