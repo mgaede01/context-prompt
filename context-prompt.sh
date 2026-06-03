@@ -306,7 +306,12 @@ __ctxp_build_prompt() {
 
 __ctxp_visible_len() {
     local esc=$'\033'
-    printf "%s" "$1" | sed "s/${esc}\[[0-9;]*m//g" | wc -m | tr -d ' '
+    local stripped
+    # Command substitution strips any trailing newline that BSD sed adds,
+    # so ${#stripped} is an accurate visible width (unlike `wc -m`, which
+    # would count sed's extra trailing newline on macOS).
+    stripped=$(printf "%s" "$1" | sed "s/${esc}\[[0-9;]*m//g")
+    printf "%s" "${#stripped}"
 }
 
 # Bash: render right prompt via cursor positioning.
@@ -319,11 +324,19 @@ __ctxp_bash_prompt() {
     visible_len="$(__ctxp_visible_len "$right")"
     cols="$(tput cols 2>/dev/null)" || cols=80
 
-    local offset=$(( cols - visible_len ))
+    # Reserve the final column. Printing into the last column triggers the
+    # terminal's auto-wrap on the next character on many terminals, which
+    # pushes the right prompt down/over the left PS1 and causes overlap.
+    local usable=$(( cols - 1 ))
+    [[ $usable -lt 0 ]] && usable=0
+
+    local offset=$(( usable - visible_len ))
     [[ $offset -lt 0 ]] && offset=0
 
     tput sc
-    tput cuf "$offset" 2>/dev/null || true
+    # `tput cuf 0` is a no-op at best and prints stray output on some
+    # terminals, so only move the cursor when there's a real offset.
+    [[ $offset -gt 0 ]] && tput cuf "$offset" 2>/dev/null
     printf "%s" "$right"
     tput rc
 }
