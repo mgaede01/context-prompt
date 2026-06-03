@@ -11,7 +11,7 @@ ctxp_provider_k8s() {
 
     local color="${CTXP_K8S_COLOR:-${__CTXP_BLUE:-}}"
     local reset="${__CTXP_RESET:-}"
-    printf "%s<k8s: %s>%s" "$color" "$ctx" "$reset"
+    printf "%s<k8s:%s>%s" "$color" "$ctx" "$reset"
 }
 
 ctxp_register k8s

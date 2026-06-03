@@ -7,7 +7,7 @@ ctxp_provider_aws() {
 
     local color="${CTXP_AWS_COLOR:-${__CTXP_YELLOW:-}}"
     local reset="${__CTXP_RESET:-}"
-    printf "%s<aws: %s>%s" "$color" "$profile" "$reset"
+    printf "%s<aws:%s>%s" "$color" "$profile" "$reset"
 }
 
 ctxp_register aws
