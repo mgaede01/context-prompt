@@ -351,6 +351,10 @@ __ctxp_precmd() {
 if [[ -n "${ZSH_VERSION:-}" ]]; then
     autoload -Uz add-zsh-hook
     add-zsh-hook precmd __ctxp_precmd
+    # zsh reserves one blank column to the right of RPROMPT by default
+    # (ZLE_RPROMPT_INDENT defaults to 1). Reclaim it so the context segments
+    # sit flush against the terminal's right edge.
+    ZLE_RPROMPT_INDENT=0
 elif [[ -n "${BASH_VERSION:-}" ]]; then
     if [[ -z "${PROMPT_COMMAND:-}" ]]; then
         PROMPT_COMMAND="__ctxp_bash_prompt"
