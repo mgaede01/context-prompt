@@ -36,6 +36,9 @@ CTXP_VENV_COLOR_NAME="magenta"
 CTXP_PROVIDERS=()
 # All known providers (sourced at any point) — never shrinks; used by list/enable
 CTXP_KNOWN_PROVIDERS=()
+# Custom providers registered via `ctxp add` — persisted so they survive
+# new shells (built-in providers are re-sourced on load and excluded here).
+CTXP_ADDED_PROVIDERS=()
 
 # Called by provider files to self-register into both arrays.
 # Optional second arg: command string to eval as the function body (one-liner shorthand).
@@ -120,6 +123,7 @@ __ctxp_enable() {
     fi
     if __ctxp_in_array "$name" "${CTXP_KNOWN_PROVIDERS[@]+"${CTXP_KNOWN_PROVIDERS[@]}"}"; then
         CTXP_PROVIDERS+=("$name")
+        __ctxp_save_config
         echo "ctxp: enabled '$name'"
         return 0
     fi
@@ -127,6 +131,7 @@ __ctxp_enable() {
     if [[ -f "$provider_file" ]]; then
         # shellcheck source=/dev/null
         source "$provider_file"
+        __ctxp_save_config
         echo "ctxp: enabled '$name'"
     else
         echo "ctxp: unknown provider '$name' (no file at ${provider_file})" >&2
@@ -148,6 +153,7 @@ __ctxp_disable() {
         [[ "$p" != "$name" ]] && new_providers+=("$p")
     done
     CTXP_PROVIDERS=("${new_providers[@]+"${new_providers[@]}"}")
+    __ctxp_save_config
     echo "ctxp: disabled '$name'"
 }
 
@@ -182,6 +188,7 @@ __ctxp_order() {
     done
 
     CTXP_PROVIDERS=("${new_order[@]+"${new_order[@]}"}")
+    __ctxp_save_config
 
     if [[ ${#skipped[@]} -gt 0 ]]; then
         echo "ctxp: order updated (note: ${skipped[*]} not listed — appended at end)"
@@ -235,6 +242,7 @@ __ctxp_set_color() {
     local name_var="CTXP_${upper}_COLOR_NAME"
     printf -v "$color_var" '%s' "$code"
     printf -v "$name_var" '%s' "$color_name"
+    __ctxp_save_config
 
     echo "ctxp: set $name color to '$color_name'"
 }
@@ -278,7 +286,127 @@ __ctxp_add() {
     eval "ctxp_provider_${name}() { ${cmd}; }"
     CTXP_PROVIDERS+=("$name")
     CTXP_KNOWN_PROVIDERS+=("$name")
+    CTXP_ADDED_PROVIDERS+=("$name")
+    __ctxp_save_config
     echo "ctxp: added provider '$name'"
+}
+
+# --- Configuration persistence ---
+#
+# Mutating commands (enable/disable/order/color/add) call __ctxp_save_config,
+# which rewrites an auto-generated shell snippet under the XDG config dir.
+# __ctxp_load_config sources it once at startup (after the built-in providers),
+# replaying the saved state through the quiet __ctxp_restore_* helpers.
+
+# Path to the persisted config file (honors XDG_CONFIG_HOME).
+__ctxp_config_file() {
+    printf '%s/context-prompt/config' "${XDG_CONFIG_HOME:-$HOME/.config}"
+}
+
+# Built-in default color for a provider; "none" for everything else.
+# Keep in sync with the CTXP_*_COLOR_NAME defaults near the top of this file.
+__ctxp_default_color() {
+    case "$1" in
+        aws)  echo yellow ;;
+        k8s)  echo blue ;;
+        git)  echo green ;;
+        venv) echo magenta ;;
+        *)    echo none ;;
+    esac
+}
+
+# Re-registers a custom provider name into the known/added lists (the function
+# body itself is restored by the dumped definition that precedes this call).
+__ctxp_restore_known() {
+    local name="${1:-}"
+    [[ -z "$name" ]] && return
+    __ctxp_in_array "$name" "${CTXP_KNOWN_PROVIDERS[@]+"${CTXP_KNOWN_PROVIDERS[@]}"}" \
+        || CTXP_KNOWN_PROVIDERS+=("$name")
+    __ctxp_in_array "$name" "${CTXP_ADDED_PROVIDERS[@]+"${CTXP_ADDED_PROVIDERS[@]}"}" \
+        || CTXP_ADDED_PROVIDERS+=("$name")
+}
+
+# Silently applies a saved color (resolving the name to its ANSI code).
+__ctxp_restore_color() {
+    local name="${1:-}" color_name="${2:-}"
+    [[ -z "$name" || -z "$color_name" ]] && return
+    local code
+    code="$(__ctxp_color_code "$color_name")" || return
+    local upper
+    upper=$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]')
+    printf -v "CTXP_${upper}_COLOR" '%s' "$code"
+    printf -v "CTXP_${upper}_COLOR_NAME" '%s' "$color_name"
+}
+
+# Silently sets the enabled providers to exactly the given names, in order,
+# dropping any that aren't known. This fully defines the enabled/disabled split.
+__ctxp_restore_order() {
+    local new=() name
+    for name in "$@"; do
+        __ctxp_in_array "$name" "${CTXP_KNOWN_PROVIDERS[@]+"${CTXP_KNOWN_PROVIDERS[@]}"}" \
+            && new+=("$name")
+    done
+    CTXP_PROVIDERS=("${new[@]+"${new[@]}"}")
+}
+
+# Rewrites the config file from current in-memory state. Best-effort: any
+# failure is swallowed so it can never disrupt the shell.
+__ctxp_save_config() {
+    [[ -n "${__CTXP_LOADING:-}" ]] && return   # never save while loading
+
+    local file dir tmp
+    file="$(__ctxp_config_file)"
+    dir="${file%/*}"
+    mkdir -p "$dir" 2>/dev/null || return 0
+    tmp="${file}.tmp.$$"
+
+    {
+        echo "# context-prompt configuration — auto-generated."
+        echo "# Rewritten whenever a 'ctxp' command changes configuration; edits are lost."
+        echo ""
+
+        local p upper var cur def
+        # Custom providers: dump the function definition, then re-register it.
+        for p in "${CTXP_ADDED_PROVIDERS[@]+"${CTXP_ADDED_PROVIDERS[@]}"}"; do
+            if [[ -n "${ZSH_VERSION:-}" ]]; then
+                functions -- "ctxp_provider_${p}" 2>/dev/null
+            else
+                declare -f "ctxp_provider_${p}" 2>/dev/null
+            fi
+            echo "__ctxp_restore_known ${p}"
+        done
+
+        # Colors that differ from their built-in default.
+        for p in "${CTXP_KNOWN_PROVIDERS[@]+"${CTXP_KNOWN_PROVIDERS[@]}"}"; do
+            upper=$(printf '%s' "$p" | tr '[:lower:]' '[:upper:]')
+            var="CTXP_${upper}_COLOR_NAME"
+            if [[ -n "${BASH_VERSION:-}" ]]; then
+                cur="${!var:-}"
+            else
+                cur="${(P)var:-}"
+            fi
+            [[ -z "$cur" ]] && continue
+            def="$(__ctxp_default_color "$p")"
+            [[ "$cur" == "$def" ]] && continue
+            echo "__ctxp_restore_color ${p} ${cur}"
+        done
+
+        # Enabled providers in display order — implicitly captures the
+        # disabled set (any known provider not listed here).
+        echo "__ctxp_restore_order ${CTXP_PROVIDERS[*]+"${CTXP_PROVIDERS[*]}"}"
+    } > "$tmp" 2>/dev/null && mv "$tmp" "$file" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+}
+
+# Sources the saved config (if any) once at startup. The __CTXP_LOADING guard
+# prevents the restore helpers from triggering a redundant re-save.
+__ctxp_load_config() {
+    local file
+    file="$(__ctxp_config_file)"
+    [[ -f "$file" ]] || return 0
+    __CTXP_LOADING=1
+    # shellcheck source=/dev/null
+    source "$file"
+    unset __CTXP_LOADING
 }
 
 __ctxp_help() {
@@ -298,6 +426,9 @@ ctxp — context-prompt CLI
 Colors: red  green  yellow  blue  magenta  cyan  white  gray  orange  none
         bright variants: brightred  brightgreen  brightyellow  brightblue
                          brightmagenta  brightcyan  brightwhite
+
+Changes are saved automatically and restored in new shells
+(${XDG_CONFIG_HOME:-~/.config}/context-prompt/config).
 
 Examples:
   ctxp disable k8s
@@ -408,3 +539,8 @@ for __ctxp_p in aws k8s git venv; do
     [[ -f "${CTXP_DIR}/providers/${__ctxp_p}.sh" ]] && source "${CTXP_DIR}/providers/${__ctxp_p}.sh"
 done
 unset __ctxp_p
+
+# --- Restore persisted configuration ---
+# Runs after built-ins are registered so saved enable/disable/order/color and
+# custom `ctxp add` providers are reapplied on top of a clean default state.
+__ctxp_load_config

@@ -8,6 +8,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PASS=0
 FAIL=0
 
+# Isolate persisted config so tests never touch the real ~/.config and each
+# run starts from a clean slate.
+export XDG_CONFIG_HOME="$(mktemp -d)"
+trap 'rm -rf "$XDG_CONFIG_HOME"' EXIT
+
 check() {
     local desc="$1" expected="$2" actual="$3"
     if [[ "$actual" == "$expected" ]]; then
@@ -215,6 +220,50 @@ check_contains "RPROMPT wraps opening escape in %{...%}" "%{${esc}[31m%}" "$RPRO
 check_contains "RPROMPT wraps reset escape in %{...%}"   "%{${esc}[0m%}"  "$RPROMPT"
 check_contains "RPROMPT keeps visible text unwrapped"    "<wraptest:z>"   "$RPROMPT"
 ctxp disable wraptest > /dev/null
+
+echo ""
+echo "--- config persistence ---"
+# Drive changes in one subshell, then verify a fresh subshell restores them.
+# Both share the isolated XDG_CONFIG_HOME exported at the top of this file.
+PERSIST_HOME="$(mktemp -d)"
+(
+    export XDG_CONFIG_HOME="$PERSIST_HOME"
+    NO_COLOR=1 source "${SCRIPT_DIR}/context-prompt.sh"
+    ctxp disable k8s        >/dev/null
+    ctxp order venv git aws >/dev/null
+    ctxp color aws red      >/dev/null
+    ctxp add tf 'printf "<tf:%s>" "prod"' >/dev/null
+) >/dev/null 2>&1
+
+cfg="$PERSIST_HOME/context-prompt/config"
+check "config file is written" "yes" "$([[ -f "$cfg" ]] && echo yes || echo no)"
+
+restored="$(
+    export XDG_CONFIG_HOME="$PERSIST_HOME"
+    NO_COLOR=1 source "${SCRIPT_DIR}/context-prompt.sh"
+    ctxp list
+)"
+check_contains "restores disabled state" "k8s          disabled" "$restored"
+check_contains "restores custom color"   "aws          enabled    red" "$restored"
+check_contains "restores custom provider" "tf           enabled" "$restored"
+
+# Order is restored: venv before git before aws in the enabled section
+order_line="$(
+    export XDG_CONFIG_HOME="$PERSIST_HOME"
+    NO_COLOR=1 source "${SCRIPT_DIR}/context-prompt.sh"
+    ctxp list | awk '$2=="enabled"{print $1}' | tr '\n' ' '
+)"
+check_contains "restores display order" "venv git aws" "$order_line"
+
+# Custom provider actually renders after restore
+tf_out="$(
+    export XDG_CONFIG_HOME="$PERSIST_HOME"
+    NO_COLOR=1 source "${SCRIPT_DIR}/context-prompt.sh"
+    ctxp_provider_tf
+)"
+check "restored custom provider renders" "<tf:prod>" "$tf_out"
+
+rm -rf "$PERSIST_HOME"
 
 echo ""
 echo "================================"

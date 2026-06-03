@@ -138,7 +138,7 @@ $ ctxp color aws
 ctxp: aws color is 'red'
 ```
 
-Color changes take effect immediately on the next prompt. To make them permanent, add the `ctxp color` calls to your rc file after the `source` line.
+Color changes take effect immediately on the next prompt and are saved automatically (see [Persistence](#persistence)).
 
 Set `NO_COLOR=1` to disable all colors globally (follows the [no-color.org](https://no-color.org) convention).
 
@@ -164,7 +164,26 @@ ctxp_provider_myapp() {
 ctxp_register myapp
 ```
 
-Put these in your rc file after the `source` line so they persist across sessions.
+One-liner providers added with `ctxp add` are saved automatically and restored in new shells (see [Persistence](#persistence)). The **full form** above defines the function directly in your current shell, so put it in your rc file after the `source` line to have it persist.
+
+---
+
+## Persistence
+
+Configuration changes are saved automatically and reapplied in every new shell — no need to edit your rc file. This covers:
+
+- `ctxp enable` / `ctxp disable`
+- `ctxp order`
+- `ctxp color`
+- `ctxp add` (one-liner custom providers)
+
+State is written to `${XDG_CONFIG_HOME:-~/.config}/context-prompt/config`, an auto-generated file that is rewritten on each change. You normally never edit it by hand. To reset to defaults, delete it:
+
+```bash
+rm "${XDG_CONFIG_HOME:-$HOME/.config}/context-prompt/config"
+```
+
+The file is sourced once at startup, after the built-in providers load, so saved settings layer cleanly on top of the defaults.
 
 ---
 
