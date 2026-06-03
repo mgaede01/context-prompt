@@ -306,7 +306,12 @@ __ctxp_build_prompt() {
 
 __ctxp_visible_len() {
     local esc=$'\033'
-    printf "%s" "$1" | sed "s/${esc}\[[0-9;]*m//g" | wc -m | tr -d ' '
+    local stripped
+    # Command substitution strips any trailing newline that BSD sed adds,
+    # so ${#stripped} is an accurate visible width (unlike `wc -m`, which
+    # would count sed's extra trailing newline on macOS).
+    stripped=$(printf "%s" "$1" | sed "s/${esc}\[[0-9;]*m//g")
+    printf "%s" "${#stripped}"
 }
 
 # Bash: render right prompt via cursor positioning.
@@ -319,18 +324,31 @@ __ctxp_bash_prompt() {
     visible_len="$(__ctxp_visible_len "$right")"
     cols="$(tput cols 2>/dev/null)" || cols=80
 
-    local offset=$(( cols - visible_len ))
+    # Reserve the final column. Printing into the last column triggers the
+    # terminal's auto-wrap on the next character on many terminals, which
+    # pushes the right prompt down/over the left PS1 and causes overlap.
+    local usable=$(( cols - 1 ))
+    [[ $usable -lt 0 ]] && usable=0
+
+    local offset=$(( usable - visible_len ))
     [[ $offset -lt 0 ]] && offset=0
 
     tput sc
-    tput cuf "$offset" 2>/dev/null || true
+    # `tput cuf 0` is a no-op at best and prints stray output on some
+    # terminals, so only move the cursor when there's a real offset.
+    [[ $offset -gt 0 ]] && tput cuf "$offset" 2>/dev/null
     printf "%s" "$right"
     tput rc
 }
 
 # Zsh: set RPROMPT before each prompt.
 __ctxp_precmd() {
-    RPROMPT="$(__ctxp_build_prompt)"
+    local esc=$'\033'
+    # Wrap each ANSI escape in %{...%} so zsh counts it as zero-width.
+    # Unwrapped escapes are counted toward the prompt's display width, so
+    # RPROMPT gets right-aligned too far left and overlaps the left prompt —
+    # worsening with each additional colored provider segment.
+    RPROMPT="$(__ctxp_build_prompt | sed "s/${esc}\[[0-9;]*m/%{&%}/g")"
 }
 
 # --- Shell hooks ---
@@ -338,6 +356,10 @@ __ctxp_precmd() {
 if [[ -n "${ZSH_VERSION:-}" ]]; then
     autoload -Uz add-zsh-hook
     add-zsh-hook precmd __ctxp_precmd
+    # zsh reserves one blank column to the right of RPROMPT by default
+    # (ZLE_RPROMPT_INDENT defaults to 1). Reclaim it so the context segments
+    # sit flush against the terminal's right edge.
+    ZLE_RPROMPT_INDENT=0
 elif [[ -n "${BASH_VERSION:-}" ]]; then
     if [[ -z "${PROMPT_COMMAND:-}" ]]; then
         PROMPT_COMMAND="__ctxp_bash_prompt"
