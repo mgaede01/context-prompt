@@ -159,6 +159,17 @@ color_err="$(ctxp color aws bogus 2>&1)" || true
 check_contains "unknown color shows error" "unknown color" "$color_err"
 
 echo ""
+echo "--- ctxp color list ---"
+color_list="$(ctxp color list)"
+check_contains "color list shows header"        "Available colors" "$color_list"
+check_contains "color list shows a standard color" "magenta"        "$color_list"
+check_contains "color list shows a bright color"   "brightcyan"     "$color_list"
+check_contains "color list shows none"             "none"           "$color_list"
+# NO_COLOR output must contain no ANSI escapes
+nc_list="$(NO_COLOR=1 ctxp color list)"
+check_not_contains "color list honors NO_COLOR" $'\033' "$nc_list"
+
+echo ""
 echo "--- ctxp order ---"
 # Reset to known state
 CTXP_PROVIDERS=(aws k8s git venv)

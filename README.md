@@ -55,6 +55,7 @@ ctxp enable  <provider>           re-enable a disabled provider
 ctxp disable <provider>           hide a provider from the prompt
 ctxp order   <provider> ...       set the left-to-right display order
 ctxp color   <provider> [color]   show or set a provider's color
+ctxp color   list                 list all available colors
 ctxp list                         show all providers, their status, and color
 ctxp status                       print what the right prompt currently shows
 ctxp add     <name> '<cmd>'       register a custom one-liner provider
@@ -116,7 +117,7 @@ ctxp color k8s cyan
 ctxp color git none       # remove color from git segment
 ```
 
-**Available colors:**
+**Available colors** (run `ctxp color list` to preview them in your terminal):
 
 | Standard | Bright variant |
 |---|---|
