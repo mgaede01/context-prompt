@@ -193,3 +193,17 @@ The file is sourced once at startup, after the built-in providers load, so saved
 - **Bash**: prepends a function to `PROMPT_COMMAND` that uses `tput` to position the cursor at the right edge of the terminal
 
 Providers that produce no output (e.g. `AWS_PROFILE` is unset) contribute nothing to the prompt — segments only appear when relevant.
+
+---
+
+## Development
+
+The test suite runs under **both** bash and zsh — run it under each to exercise the shell-specific prompt and persistence paths:
+
+```bash
+bash test/test.sh     # bash
+zsh  test/test.sh     # zsh
+bash test/run.sh      # both (zsh auto-skipped if not installed)
+```
+
+Tests isolate their state in a temporary `XDG_CONFIG_HOME`, so running them never touches your real configuration.
