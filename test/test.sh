@@ -1,12 +1,24 @@
 #!/usr/bin/env bash
 # Smoke tests for context-prompt providers and ctxp CLI.
-# Run directly: bash test/test.sh
+# Runs under both shells:  bash test/test.sh   OR   zsh test/test.sh
+# (Run it under zsh to exercise the zsh-only RPROMPT / persistence paths.)
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Locate the repo root. The test is executed (not sourced), so $0 is the
+# script path under both bash and zsh — no shell-specific detection needed.
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PASS=0
 FAIL=0
+
+# Space-joined list of enabled providers in order — works in bash and zsh
+# (avoids shell-specific numeric array indexing).
+enabled_order() { printf '%s' "${CTXP_PROVIDERS[*]}"; }
+
+# Isolate persisted config so tests never touch the real ~/.config and each
+# run starts from a clean slate.
+export XDG_CONFIG_HOME="$(mktemp -d)"
+trap 'rm -rf "$XDG_CONFIG_HOME"' EXIT
 
 check() {
     local desc="$1" expected="$2" actual="$3"
@@ -175,13 +187,12 @@ echo "--- ctxp order ---"
 CTXP_PROVIDERS=(aws k8s git venv)
 
 ctxp order venv git k8s aws > /dev/null
-check "order: first provider" "venv" "${CTXP_PROVIDERS[0]}"
-check "order: last provider"  "aws"  "${CTXP_PROVIDERS[3]}"
+check "order: full sequence applied" "venv git k8s aws" "$(enabled_order)"
 
 # Omitted provider gets appended with warning
 ctxp disable venv > /dev/null
 ctxp order k8s aws > /dev/null  # git is enabled but not listed
-check "order: unlisted provider appended" "git" "${CTXP_PROVIDERS[2]}"
+check "order: unlisted provider appended at end" "k8s aws git" "$(enabled_order)"
 ctxp enable venv > /dev/null
 
 # Disabled provider in order list is skipped (not re-enabled)
@@ -215,6 +226,85 @@ check_contains "RPROMPT wraps opening escape in %{...%}" "%{${esc}[31m%}" "$RPRO
 check_contains "RPROMPT wraps reset escape in %{...%}"   "%{${esc}[0m%}"  "$RPROMPT"
 check_contains "RPROMPT keeps visible text unwrapped"    "<wraptest:z>"   "$RPROMPT"
 ctxp disable wraptest > /dev/null
+
+echo ""
+echo "--- __ctxp_visible_len (ANSI-stripped width) ---"
+# Directly guards the macOS off-by-one (BSD sed's trailing newline inflating
+# the count): the visible width must exclude ANSI escape sequences.
+check "visible_len of plain text"        "5"  "$(__ctxp_visible_len "hello")"
+check "visible_len ignores color codes"  "5"  "$(__ctxp_visible_len "${esc}[31mhello${esc}[0m")"
+check "visible_len of a colored segment" "10" "$(__ctxp_visible_len "${esc}[33m<aws:prod>${esc}[0m")"
+
+echo ""
+echo "--- __ctxp_bash_prompt (right-prompt rendering) ---"
+# TERM is forced so tput has a valid terminfo entry in a non-interactive run.
+bp_empty="$(CTXP_PROVIDERS=(); TERM=xterm __ctxp_bash_prompt)"
+check "bash prompt is empty when no segments" "" "$bp_empty"
+bp_out="$(ctxp add bptest "printf '<bptest:%s>' y" >/dev/null 2>&1; TERM=xterm __ctxp_bash_prompt)"
+check_contains "bash prompt renders the active segment" "<bptest:y>" "$bp_out"
+
+echo ""
+echo "--- ctxp help ---"
+help_out="$(ctxp help)"
+check_contains "help shows the CLI title"   "context-prompt CLI" "$help_out"
+check_contains "help lists the enable verb" "ctxp enable"        "$help_out"
+check_contains "help notes persistence"     "saved automatically" "$help_out"
+
+echo ""
+echo "--- zsh-specific behavior ---"
+if [ -n "${ZSH_VERSION:-}" ]; then
+    check "zsh reclaims the RPROMPT indent" "0" "${ZLE_RPROMPT_INDENT:-unset}"
+    ctxp add zt "printf '<zt:%s>' q" > /dev/null
+    __ctxp_precmd
+    check_contains "zsh precmd populates RPROMPT" "<zt:q>" "$RPROMPT"
+    ctxp disable zt > /dev/null
+else
+    echo "  SKIP  zsh-only checks (run 'zsh test/test.sh' to exercise them)"
+fi
+
+echo ""
+echo "--- config persistence ---"
+# Drive changes in one subshell, then verify a fresh subshell restores them.
+# Both share the isolated XDG_CONFIG_HOME exported at the top of this file.
+PERSIST_HOME="$(mktemp -d)"
+(
+    export XDG_CONFIG_HOME="$PERSIST_HOME"
+    NO_COLOR=1 source "${SCRIPT_DIR}/context-prompt.sh"
+    ctxp disable k8s        >/dev/null
+    ctxp order venv git aws >/dev/null
+    ctxp color aws red      >/dev/null
+    ctxp add tf 'printf "<tf:%s>" "prod"' >/dev/null
+) >/dev/null 2>&1
+
+cfg="$PERSIST_HOME/context-prompt/config"
+check "config file is written" "yes" "$([[ -f "$cfg" ]] && echo yes || echo no)"
+
+restored="$(
+    export XDG_CONFIG_HOME="$PERSIST_HOME"
+    NO_COLOR=1 source "${SCRIPT_DIR}/context-prompt.sh"
+    ctxp list
+)"
+check_contains "restores disabled state" "k8s          disabled" "$restored"
+check_contains "restores custom color"   "aws          enabled    red" "$restored"
+check_contains "restores custom provider" "tf           enabled" "$restored"
+
+# Order is restored: venv before git before aws in the enabled section
+order_line="$(
+    export XDG_CONFIG_HOME="$PERSIST_HOME"
+    NO_COLOR=1 source "${SCRIPT_DIR}/context-prompt.sh"
+    ctxp list | awk '$2=="enabled"{print $1}' | tr '\n' ' '
+)"
+check_contains "restores display order" "venv git aws" "$order_line"
+
+# Custom provider actually renders after restore
+tf_out="$(
+    export XDG_CONFIG_HOME="$PERSIST_HOME"
+    NO_COLOR=1 source "${SCRIPT_DIR}/context-prompt.sh"
+    ctxp_provider_tf
+)"
+check "restored custom provider renders" "<tf:prod>" "$tf_out"
+
+rm -rf "$PERSIST_HOME"
 
 echo ""
 echo "================================"

@@ -15,6 +15,13 @@ else
     echo "  ${INSTALL_DIR} not found — skipping"
 fi
 
+# Remove persisted configuration (XDG config dir)
+CONFIG_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/context-prompt"
+if [[ -d "$CONFIG_DIR" ]]; then
+    rm -rf "$CONFIG_DIR"
+    echo "  Removed ${CONFIG_DIR}"
+fi
+
 # Remove source lines from all common rc files
 remove_from_rc() {
     local rc_file="$1"
