@@ -263,6 +263,48 @@ else
 fi
 
 echo ""
+echo "--- minimal mode ---"
+# Isolate provider state from the rest of the suite, then restore it after.
+min_save_providers=("${CTXP_PROVIDERS[@]}")
+min_save_flag="${CTXP_MINIMAL}"
+CTXP_PROVIDERS=()
+ctxp add mA 'printf "<mA:one>"' > /dev/null
+ctxp add mB 'printf "<mB:two>"' > /dev/null
+
+check "verbose (default) keeps separate groups" "<mA:one><mB:two>" "$(CTXP_MINIMAL=0 __ctxp_build_prompt)"
+check "minimal collapses to one group, values only" "<one|two>" "$(CTXP_MINIMAL=1 __ctxp_build_prompt)"
+check "minimal is empty when nothing is active" "" "$(CTXP_PROVIDERS=(); CTXP_MINIMAL=1 __ctxp_build_prompt)"
+
+ctxp minimal on  > /dev/null
+check_contains "minimal reports on"  "is on"  "$(ctxp minimal)"
+ctxp minimal off > /dev/null
+check_contains "minimal reports off" "is off" "$(ctxp minimal)"
+
+# Color framing: source a colored instance (NO_COLOR unset) in its own config
+# dir so the white delimiters and per-segment colors are present.
+MIN_CFG="$(mktemp -d)"
+cframe="$(
+    export XDG_CONFIG_HOME="$MIN_CFG"
+    source "${SCRIPT_DIR}/context-prompt.sh"
+    CTXP_PROVIDERS=()
+    ctxp add cA 'printf "\033[31m<cA:one>\033[0m"' >/dev/null
+    ctxp add cB 'printf "\033[32m<cB:two>\033[0m"' >/dev/null
+    CTXP_MINIMAL=1 __ctxp_build_prompt
+)"
+rm -rf "$MIN_CFG"
+check_contains "minimal: white open bracket"   "${esc}[37m<" "$cframe"
+check_contains "minimal: white pipe delimiter"  "${esc}[37m|" "$cframe"
+check_contains "minimal: white close bracket"   "${esc}[37m>" "$cframe"
+check_contains "minimal: first value keeps color"  "${esc}[31mone" "$cframe"
+check_contains "minimal: second value keeps color" "${esc}[32mtwo" "$cframe"
+
+# Restore the suite's provider state
+ctxp disable mA > /dev/null 2>&1 || true
+ctxp disable mB > /dev/null 2>&1 || true
+CTXP_PROVIDERS=("${min_save_providers[@]+"${min_save_providers[@]}"}")
+CTXP_MINIMAL="$min_save_flag"
+
+echo ""
 echo "--- config persistence ---"
 # Drive changes in one subshell, then verify a fresh subshell restores them.
 # Both share the isolated XDG_CONFIG_HOME exported at the top of this file.
@@ -274,6 +316,7 @@ PERSIST_HOME="$(mktemp -d)"
     ctxp order venv git aws >/dev/null
     ctxp color aws red      >/dev/null
     ctxp add tf 'printf "<tf:%s>" "prod"' >/dev/null
+    ctxp minimal on         >/dev/null
 ) >/dev/null 2>&1
 
 cfg="$PERSIST_HOME/context-prompt/config"
@@ -303,6 +346,14 @@ tf_out="$(
     ctxp_provider_tf
 )"
 check "restored custom provider renders" "<tf:prod>" "$tf_out"
+
+# Minimal mode survives into a fresh shell
+min_flag="$(
+    export XDG_CONFIG_HOME="$PERSIST_HOME"
+    NO_COLOR=1 source "${SCRIPT_DIR}/context-prompt.sh"
+    printf '%s' "${CTXP_MINIMAL:-0}"
+)"
+check "restores minimal mode" "1" "$min_flag"
 
 rm -rf "$PERSIST_HOME"
 

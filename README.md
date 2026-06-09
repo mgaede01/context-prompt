@@ -59,6 +59,7 @@ ctxp color   list                 list all available colors
 ctxp list                         show all providers, their status, and color
 ctxp status                       print what the right prompt currently shows
 ctxp add     <name> '<cmd>'       register a custom one-liner provider
+ctxp minimal [on|off]             toggle the compact single-group display
 ctxp help                         show usage
 ```
 
@@ -141,6 +142,27 @@ ctxp: aws color is 'red'
 Color changes take effect immediately on the next prompt and are saved automatically (see [Persistence](#persistence)).
 
 Set `NO_COLOR=1` to disable all colors globally (follows the [no-color.org](https://no-color.org) convention).
+
+---
+
+## Minimal mode
+
+For a less busy prompt, `ctxp minimal` collapses the active segments into a single group with `|` delimiters, showing **values only**:
+
+```
+default:   <aws:prod><k8s:prod-cluster><git:main>
+minimal:   <prod|prod-cluster|main>
+```
+
+Each value keeps its provider color; the `<`, `|`, and `>` delimiters render in white (plain when `NO_COLOR` is set).
+
+```bash
+ctxp minimal on     # compact single-group display
+ctxp minimal off    # back to separate bracketed segments (default)
+ctxp minimal        # show the current state
+```
+
+The setting is saved automatically and restored in new shells (see [Persistence](#persistence)).
 
 ---
 

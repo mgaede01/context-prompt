@@ -17,12 +17,14 @@ if [[ -z "${NO_COLOR:-}" ]]; then
     __CTXP_BLUE=$'\033[34m'
     __CTXP_GREEN=$'\033[32m'
     __CTXP_MAGENTA=$'\033[35m'
+    __CTXP_WHITE=$'\033[37m'
     __CTXP_RESET=$'\033[0m'
 else
     __CTXP_YELLOW=""
     __CTXP_BLUE=""
     __CTXP_GREEN=""
     __CTXP_MAGENTA=""
+    __CTXP_WHITE=""
     __CTXP_RESET=""
 fi
 
@@ -39,6 +41,9 @@ CTXP_KNOWN_PROVIDERS=()
 # Custom providers registered via `ctxp add` — persisted so they survive
 # new shells (built-in providers are re-sourced on load and excluded here).
 CTXP_ADDED_PROVIDERS=()
+# Minimal mode (0/1): collapse segments into one white-delimited group,
+# e.g. <prod|prod-cluster|main>. Toggled by `ctxp minimal`; persisted.
+CTXP_MINIMAL=0
 
 # Called by provider files to self-register into both arrays.
 # Optional second arg: command string to eval as the function body (one-liner shorthand).
@@ -291,6 +296,25 @@ __ctxp_add() {
     echo "ctxp: added provider '$name'"
 }
 
+# Toggles or reports minimal mode (single white-delimited group, values only).
+__ctxp_minimal() {
+    local arg="${1:-}"
+    case "$arg" in
+        on|1|true)
+            CTXP_MINIMAL=1; __ctxp_save_config; echo "ctxp: minimal mode on" ;;
+        off|0|false)
+            CTXP_MINIMAL=0; __ctxp_save_config; echo "ctxp: minimal mode off" ;;
+        "")
+            if [[ "${CTXP_MINIMAL:-0}" == 1 ]]; then
+                echo "ctxp: minimal mode is on"
+            else
+                echo "ctxp: minimal mode is off"
+            fi ;;
+        *)
+            echo "Usage: ctxp minimal [on|off]" >&2; return 1 ;;
+    esac
+}
+
 # --- Configuration persistence ---
 #
 # Mutating commands (enable/disable/order/color/add) call __ctxp_save_config,
@@ -349,6 +373,11 @@ __ctxp_restore_order() {
     CTXP_PROVIDERS=("${new[@]+"${new[@]}"}")
 }
 
+# Silently restores the minimal-mode flag.
+__ctxp_restore_minimal() {
+    CTXP_MINIMAL="${1:-0}"
+}
+
 # Rewrites the config file from current in-memory state. Best-effort: any
 # failure is swallowed so it can never disrupt the shell.
 __ctxp_save_config() {
@@ -394,6 +423,9 @@ __ctxp_save_config() {
         # Enabled providers in display order — implicitly captures the
         # disabled set (any known provider not listed here).
         echo "__ctxp_restore_order ${CTXP_PROVIDERS[*]+"${CTXP_PROVIDERS[*]}"}"
+
+        # Minimal mode — only written when on (default off is implied).
+        [[ "${CTXP_MINIMAL:-0}" == 1 ]] && echo "__ctxp_restore_minimal 1"
     } > "$tmp" 2>/dev/null && mv "$tmp" "$file" 2>/dev/null || rm -f "$tmp" 2>/dev/null
 }
 
@@ -421,6 +453,7 @@ ctxp — context-prompt CLI
   ctxp list                         show all providers, status, and color
   ctxp status                       print what the right prompt currently shows
   ctxp add     <name> '<cmd>'       register a custom one-liner provider
+  ctxp minimal [on|off]             one white-delimited group: <a|b|c>
   ctxp help                         show this message
 
 Colors: red  green  yellow  blue  magenta  cyan  white  gray  orange  none
@@ -437,6 +470,7 @@ Examples:
   ctxp color   aws red
   ctxp color   k8s
   ctxp color   list
+  ctxp minimal on
   ctxp add myapp '[ -n "$MYAPP_ENV" ] && printf "<myapp:%s>" "$MYAPP_ENV"'
 EOF
 }
@@ -453,6 +487,7 @@ ctxp() {
         list)    __ctxp_list ;;
         status)  NO_COLOR=1 __ctxp_build_prompt; echo ;;
         add)     __ctxp_add       "${2:-}" "${3:-}" ;;
+        minimal) __ctxp_minimal   "${2:-}" ;;
         help|*)  __ctxp_help ;;
     esac
 }
@@ -460,12 +495,43 @@ ctxp() {
 # --- Prompt rendering ---
 
 __ctxp_build_prompt() {
-    local output="" segment p
+    local segment p
+    local segs=()
     for p in "${CTXP_PROVIDERS[@]+"${CTXP_PROVIDERS[@]}"}"; do
         segment=$(ctxp_provider_${p} 2>/dev/null) || continue
-        [[ -n "$segment" ]] && output="${output}${segment}"
+        [[ -n "$segment" ]] && segs+=("$segment")
     done
-    printf "%s" "$output"
+
+    if [[ "${CTXP_MINIMAL:-0}" == 1 ]]; then
+        __ctxp_render_minimal "${segs[@]+"${segs[@]}"}"
+    else
+        local output="" s
+        for s in "${segs[@]+"${segs[@]}"}"; do output="${output}${s}"; done
+        printf "%s" "$output"
+    fi
+}
+
+# Renders the given provider segments as a single white-delimited group with
+# values only, e.g. <prod|prod-cluster|main>. Each value keeps the color its
+# provider emitted; the delimiters < | > use __CTXP_WHITE (blank under NO_COLOR,
+# yielding a plain group). Emits nothing when there are no segments.
+__ctxp_render_minimal() {
+    [[ $# -eq 0 ]] && return
+    local seg color inner out="" first=1
+    for seg in "$@"; do
+        # Split [color]<inner>[reset] with pure parameter expansion (no forks).
+        color="${seg%%<*}"      # leading ANSI color the provider emitted
+        inner="${seg#*<}"       # drop everything up to the first '<'
+        inner="${inner%%>*}"    # keep text up to the first '>'
+        inner="${inner#*:}"     # values only — drop the 'label:' prefix
+        if [[ $first -eq 1 ]]; then
+            first=0
+            out="${__CTXP_WHITE}<${color}${inner}"
+        else
+            out="${out}${__CTXP_WHITE}|${color}${inner}"
+        fi
+    done
+    printf "%s" "${out}${__CTXP_WHITE}>${__CTXP_RESET}"
 }
 
 __ctxp_visible_len() {
